@@ -1,9 +1,10 @@
 import torch
 from .base import BaseModel
+import soundfile
 
 
 class Phi4Multimodal(BaseModel):
-    NAME = 'Phi4mm'
+    NAME = 'phi4mm'
     def __init__(self, model_path='microsoft/Phi-4-multimodal-instruct', **kwargs):
         assert model_path is not None
         try:
@@ -49,7 +50,7 @@ class Phi4Multimodal(BaseModel):
         if meta and 'reasoning' in meta['task'].lower():
             max_new_tokens = 1024
 
-        inputs = processor(text=prompt, audios=audios, return_tensors='pt').to(self.model.device)
+        inputs = self.processor(text=text_query, audios=audios, return_tensors='pt').to(self.model.device)
         with torch.no_grad():
             generate_ids = self.model.generate(
                 **inputs,

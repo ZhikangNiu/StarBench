@@ -3,6 +3,7 @@ import torch
 from .base import BaseModel
 import os
 import base64
+import time
 
 class Gemini(BaseModel):
     NAME = 'gemini'

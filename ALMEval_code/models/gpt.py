@@ -3,6 +3,7 @@ import torch
 from .base import BaseModel
 import os
 import base64
+import json
 
 class GPT4o_Audio(BaseModel):
     NAME = 'gpt4o_audio'
@@ -49,16 +50,21 @@ class GPT4o_Audio(BaseModel):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model_id,
-                    messages=messages
+                    modalities=["text","audio"],
+                    messages=messages,
+                    audio={"voice": "alloy","format": audio_type},
+                    stream=False
                 )
-                output = response.choices[0].message.content
-                print('【gemini output】:', output)
+                # response_json_string = json.dumps(response.model_dump(), ensure_ascii=False, indent=4)
+                # print(f'response: {response_json_string}')
+                output = response.choices[0].message.audio.transcript
+                print('【GPT output】:', output)
                 return output
             except Exception as e:
-                print(f"[Gemini] ⚠️ Attempt {attempt}/{self.retry} failed: {e}")
+                print(f"[GPT] ⚠️ Attempt {attempt}/{self.retry} failed: {e}")
                 if attempt < self.retry:
                     time.sleep(2 * attempt)  # exponential backoff
                 else:
-                    raise RuntimeError(f"[Gemini] ❌ All {self.retry} attempts failed.")
+                    raise RuntimeError(f"[GPT] ❌ All {self.retry} attempts failed.")
 
         return output

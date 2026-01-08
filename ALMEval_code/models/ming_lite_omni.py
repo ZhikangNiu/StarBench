@@ -4,10 +4,12 @@ from transformers import AutoProcessor, GenerationConfig
 from .base import BaseModel
 import warnings
 warnings.filterwarnings("ignore")
+import os
+import sys
 
-
+#NOTE diffusers==0.33.0  transformers==4.52.4
 class MingLiteOmni(BaseModel):
-    NAME = 'Ming-Lite-Omni-1.5'
+    NAME = 'ming-lite-omni'
     def __init__(self, model_folder='./Ming', **kwargs):
         abs_model_folder= os.path.abspath(model_folder)
         sys.path.insert(0, abs_model_folder)
