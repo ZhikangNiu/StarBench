@@ -1,55 +1,95 @@
+import os
 import torch
 from .base import BaseModel
 
-
-class AudioFlamingo3(BaseModel):
+# Audio Flamingo 3 HF version, you'd better update transformers >= 5.0
+class AudioFlamingo3HF(BaseModel):
     NAME = 'audio-flamingo-3'
-    def __init__(self, model_path='nvidia/audio-flamingo-3', think=False, **kwargs):
+    def __init__(self, model_path='nvidia/audio-flamingo-3-hf', thinking=False, **kwargs):
         assert model_path is not None
         try:
-            import llava
-            from llava import conversation as clib
-            from llava.media import Image, Video, Sound
-            from llava.model.configuration_llava import JsonSchemaResponseFormat, ResponseFormat
-            from peft import PeftModel
+            from transformers import AudioFlamingo3ForConditionalGeneration, AutoProcessor
         except ImportError as e:
             raise ImportError(
-                "To use the AudioFlamingo3 model, you must install its specific dependencies. "
-                "see 'https://github.com/NVIDIA/audio-flamingo/tree/audio_flamingo_3' installation: ./environment_setup.sh af3"
+                "❌ Failed to import AudioFlamingo3 dependencies.\n"
+                "Please make sure you have installed the correct transformers version"
             ) from e
 
-        model_think = os.path.join(model_path, 'stage35')
-        conv_mode = 'auto'
-        model = llava.load(model_path)
-        if think:
-            model = PeftModel.from_pretrained(
-                model,
-                model_think,
-                device_map="auto",
-                torch_dtype=torch.float16,
-            )
-        self.model = model.to("cuda")
-        self.think = think
-        torch.cuda.empty_cache() 
-    
-    def prepare_prompts_with_concating_audios(self, msg):
-        pass
+        self.model_path = model_path
+        self.thinking = thinking
+
+        self.processor = AutoProcessor.from_pretrained(model_path)
+        self.model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+            attn_implementation="flash_attention_2",
+        ).eval()
+
+        # thinking: non_lora_trainables + LoRA（PEFT）
+        if self.thinking:
+            from peft import PeftModel
+
+            # 1) Local Dir
+            if os.path.isdir(model_path) and os.path.exists(os.path.join(model_path, "think", "non_lora_trainables.bin")):
+                snapshot_dir = model_path
+                non_lora_path = os.path.join(model_path, "think", "non_lora_trainables.bin")
+            else:
+                # 2) get true path
+                from cached_path import cached_path
+                non_lora_path = str(cached_path(f"hf://{model_path}/think/non_lora_trainables.bin"))
+                # non_lora_path: .../snapshots/<hash>/think/non_lora_trainables.bin
+                snapshot_dir = os.path.dirname(os.path.dirname(non_lora_path))  # -> .../snapshots/<hash>
+
+            # 3) load non_lora_trainables
+            non_lora_trainables = torch.load(non_lora_path, map_location="cpu")
+            self.model.load_state_dict(non_lora_trainables, strict=False)
+
+            # 4) load LoRA（从 snapshot_dir/think）
+            self.model = PeftModel.from_pretrained(self.model, snapshot_dir, subfolder="think").eval()
+
+        torch.cuda.empty_cache()
 
 
     def generate_inner(self, msgs):
         meta = msgs.get('meta', None)
         prompts = msgs.get('prompts', None)
         content = []
-        #https://github.com/NVIDIA/audio-flamingo/blob/audio_flamingo_3/llava/cli/infer_audio.py#L79
         for x in prompts:
             if x['type'] == 'text':
-                content.append(x['value'])
+                content.append({"type": "text", "text": x['value']})
             elif x['type'] == 'audio':
-                content.append(Sound(x['value']))
-        if self.think:
-            content.append(' Please think and reason about the input audio before you respond.')
+                content.append({"type": "audio", "path": x['value']})
+        if self.thinking:
+            content.append({
+                "type": "text",
+                "text": "Please think and reason about the input audio before you respond.",
+            })
+        messages = [{'role': 'user', 'content': content}]
 
-        print(f'messages: {content}')
-        output = self.model.generate_content(content, response_format=None)
-        print('【af3 output】:', output)
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+        )
+        inputs = inputs.to(self.model.device)
+        for key, value in inputs.items():
+            if torch.is_tensor(value) and value.is_floating_point():
+                inputs[key] = value.to(self.model.dtype)
+
+        max_new_tokens = 500
+        if self.thinking or (meta and 'reasoning' in meta['task'].lower()):
+            max_new_tokens = 1024
+
+        with torch.no_grad():
+            model_output = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                return_dict_in_generate=True,
+            )
+            output = self.processor.batch_decode(
+                    model_output.sequences[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True, clean_up_tokenization_spaces=False
+                )[0]
+        print('【audio flamingo3 output】:', output)    
         return output
