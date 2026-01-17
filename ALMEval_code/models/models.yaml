@@ -43,6 +43,38 @@ midashenglm:
   init_args: 
     model_path: mispeech/midashenglm-7b
   
+mimo-audio:
+  base_model: mimo-audio
+  init_args:
+    model_folder: ../LALM_zoo/MiMo-Audio
+    model_path: models/MiMo-Audio-7B-Instruct
+    tokenizer_path: models/MiMo-Audio-Tokenizer
+
+mimo-audio-think:
+  base_model: mimo-audio
+  init_args:
+    model_folder: ../LALM_zoo/MiMo-Audio
+    model_path: models/MiMo-Audio-7B-Instruct
+    tokenizer_path: models/MiMo-Audio-Tokenizer
+    thinking: true
+
+audioflamingo3:
+  base_model: audio-flamingo-3
+  init_args: 
+    model_path: nvidia/audio-flamingo-3-hf
+    thinking: False
+  
+audioflamingo3-think:
+  base_model: audio-flamingo-3
+  init_args: 
+    model_path: nvidia/audio-flamingo-3-hf
+    thinking: True
+
+minicpm_o:
+  base_model: minicpm-o
+  init_args:
+    model_path: OpenBMB/MiniCPM-o-2_6
+
 kimi:
   base_model: kimi
   init_args: 
